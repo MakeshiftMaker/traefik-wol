@@ -11,6 +11,54 @@ import (
 	"time"
 )
 
+//static page
+const startingPage = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Starting server</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #111;
+            color: #eee;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            height:100vh;
+            flex-direction:column;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Server is starting…</h1>
+<p id="status">Waiting for backend...</p>
+
+<script>
+async function check() {
+    try {
+        const r = await fetch(window.location.href, {
+            method: "HEAD",
+            cache: "no-store"
+        });
+
+        if (r.status < 500) {
+            location.reload();
+            return;
+        }
+    } catch (e) {}
+
+    setTimeout(check, 2000);
+}
+
+setTimeout(check, 2000);
+</script>
+
+</body>
+</html>
+`
+
 // Config the plugin configuration.
 type Config struct {
 	MacAddress         string `json:"macAddress,omitempty"`
@@ -264,31 +312,65 @@ func (a *Wol) serviceIsAlive() bool {
 	return true
 }
 
+func (a *Wol) serveStartingPage(rw http.ResponseWriter) {
+	rw.Header().Set("Content-Type", "text/html")
+	rw.WriteHeader(http.StatusServiceUnavailable)
+	_, _ = rw.Write([]byte(startingPage))
+}
+
 func (a *Wol) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	a.resetTimer()
+
+	// Check if backend is alive
 	if !a.serviceIsAlive() {
+
 		fmt.Println("Server is down, waking up")
+
+		// Send WOL or call start URL
 		err := a.wakeUp()
 		if err != nil {
 			http.Error(rw, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		fmt.Println("Waiting for server to come up")
-		for i := 0; i < a.numRetries; i++ {
-			if a.serviceIsAlive() {
-				fmt.Println("Server is up")
-				break
-			}
+		// Instead of waiting in a retry loop,
+		// immediately serve the static starting page.
+		// The page will auto-refresh via JavaScript.
+		fmt.Println("Server not up yet, serving starting page")
 
-			time.Sleep(5 * time.Second)
-		}
-
-		if !a.serviceIsAlive() {
-			http.Error(rw, "Failed to start server", http.StatusInternalServerError)
-			return
-		}
+		a.serveStartingPage(rw)
+		return
 	}
 
+	// Server is alive → forward request normally
 	a.next.ServeHTTP(rw, req)
 }
+
+// func (a *Wol) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+// 	a.resetTimer()
+// 	if !a.serviceIsAlive() {
+// 		fmt.Println("Server is down, waking up")
+// 		err := a.wakeUp()
+// 		if err != nil {
+// 			http.Error(rw, err.Error(), http.StatusInternalServerError)
+// 			return
+// 		}
+// 
+// 		fmt.Println("Waiting for server to come up")
+// 		for i := 0; i < a.numRetries; i++ {
+// 			if a.serviceIsAlive() {
+// 				fmt.Println("Server is up")
+// 				break
+// 			}
+// 
+// 			time.Sleep(5 * time.Second)
+// 		}
+// 
+// 		if !a.serviceIsAlive() {
+// 			http.Error(rw, "Failed to start server", http.StatusInternalServerError)
+// 			return
+// 		}
+// 	}
+// 
+// 	a.next.ServeHTTP(rw, req)
+// }

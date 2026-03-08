@@ -1,3 +1,3 @@
-module github.com/MarkusJx/traefik-wol
+module github.com/MakeshiftMaker/traefik-wol
 
 go 1.19
